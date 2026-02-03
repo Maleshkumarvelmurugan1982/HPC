@@ -1,6 +1,7 @@
 sivajothi@sivajothi-HP-Laptop-15s-fq5xxx:~$ cat 4.c
 #include <mpi.h>
 #include <stdio.h>
+#include <stddef.h>
 
 #define MAX 50
 
@@ -22,10 +23,29 @@ char findGrade(int marks) {
 int main() {
     int rank, size, n, chunk;
     struct Student students[MAX];
+    MPI_Datatype MPI_STUDENT;
 
     MPI_Init(NULL, NULL);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    /* Create MPI derived datatype for Student structure */
+    int blocklengths[4];
+    MPI_Datatype types[4] = {MPI_CHAR, MPI_INT, MPI_INT, MPI_CHAR};
+    MPI_Aint offsets[4];
+    
+    blocklengths[0] = sizeof(students[0].name) / sizeof(char);
+    blocklengths[1] = 1;  // roll (single int)
+    blocklengths[2] = 1;  // total (single int)
+    blocklengths[3] = 1;  // grade (single char)
+    
+    offsets[0] = offsetof(struct Student, name);
+    offsets[1] = offsetof(struct Student, roll);
+    offsets[2] = offsetof(struct Student, total);
+    offsets[3] = offsetof(struct Student, grade);
+    
+    MPI_Type_create_struct(4, blocklengths, offsets, types, &MPI_STUDENT);
+    MPI_Type_commit(&MPI_STUDENT);
 
     /* Master process reads input file */
     if (rank == 0) {
@@ -54,17 +74,16 @@ int main() {
     if (chunk == 0) {
         if (rank == 0)
             printf("Error: Number of processes > number of students\n");
+        MPI_Type_free(&MPI_STUDENT);
         MPI_Finalize();
         return 0;
     }
 
     struct Student local[chunk];
 
-    /* Scatter student data */
-    MPI_Scatter(students,
-                chunk * sizeof(struct Student), MPI_BYTE,
-                local,
-                chunk * sizeof(struct Student), MPI_BYTE,
+    /* Scatter student data using derived datatype */
+    MPI_Scatter(students, chunk, MPI_STUDENT,
+                local, chunk, MPI_STUDENT,
                 0, MPI_COMM_WORLD);
 
     /* Each process calculates grade */
@@ -72,11 +91,9 @@ int main() {
         local[i].grade = findGrade(local[i].total);
     }
 
-    /* Gather results */
-    MPI_Gather(local,
-               chunk * sizeof(struct Student), MPI_BYTE,
-               students,
-               chunk * sizeof(struct Student), MPI_BYTE,
+    /* Gather results using derived datatype */
+    MPI_Gather(local, chunk, MPI_STUDENT,
+               students, chunk, MPI_STUDENT,
                0, MPI_COMM_WORLD);
 
     /* Master writes output file */
@@ -95,6 +112,9 @@ int main() {
         printf("Output written to grades.txt\n");
     }
 
+    /* Free the derived datatype */
+    MPI_Type_free(&MPI_STUDENT);
+    
     MPI_Finalize();
     return 0;
 }
