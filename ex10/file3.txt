@@ -1,0 +1,3 @@
+C programming with OpenMP
+Synchronization is important
+Queues help manage data
