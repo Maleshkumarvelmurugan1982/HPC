@@ -1,0 +1,3 @@
+Hello world from file one
+OpenMP is interesting
+Parallel programming is powerful
